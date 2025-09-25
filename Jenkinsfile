@@ -11,7 +11,11 @@ pipeline {
       steps {
         checkout scm
         sh '''
-          # Train & tạo artifacts trong container Python sạch
+          echo "== Current workspace =="
+          pwd
+          echo "== Files =="
+          ls -la
+          # Train & and artifacts in container Python
           docker run --rm \
             -v "$PWD":/workspace -w /workspace \
             python:3.11 bash -lc "
@@ -20,7 +24,7 @@ pipeline {
               python preprocess_and_train.py
             "
     
-          # Sau khi artifacts/ đã sinh trong workspace -> build image app
+          # After artifacts were created, the workspace -> build image app
           docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
         '''
       }
