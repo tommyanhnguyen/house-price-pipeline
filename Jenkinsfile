@@ -4,6 +4,8 @@ pipeline {
   environment {
     IMAGE_NAME = "house-price"
     IMAGE_TAG  = "${env.BUILD_NUMBER}"
+    STAGING_PORT = "8502"
+    PROD_PORT    = "8501"
   }
 
   stages {
