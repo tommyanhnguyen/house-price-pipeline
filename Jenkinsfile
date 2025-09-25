@@ -11,24 +11,31 @@ pipeline {
       steps {
         checkout scm
         sh '''
-          echo "== Current workspace =="
+          echo "== Workspace (inside Jenkins container) =="
           pwd
-          echo "== Files =="
           ls -la
-          # Train & and artifacts in container Python
+    
+          # Map Jenkins workspace path inside the named volume
+          # Jenkins WORKSPACE = /var/jenkins_home/... -> map to /jenkins_home/...
+          MOUNT_PATH="${WORKSPACE/\\/var\\/jenkins_home/\\/jenkins_home}"
+          echo "Mounting Jenkins volume path: $MOUNT_PATH"
+    
+          # Run training inside a clean Python container with the jenkins_home volume
           docker run --rm \
-            -v "$PWD":/workspace -w /workspace \
+            -v jenkins_home:/jenkins_home -w "$MOUNT_PATH" \
             python:3.11 bash -lc "
+              ls -la &&
               python -V &&
               pip install -r requirements.txt &&
               python preprocess_and_train.py
             "
     
-          # After artifacts were created, the workspace -> build image app
+          # Build the app image including generated artifacts
           docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
         '''
       }
     }
+
 
 
     stage('Test') {
