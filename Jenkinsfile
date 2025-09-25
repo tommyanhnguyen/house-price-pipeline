@@ -11,16 +11,16 @@ pipeline {
       steps {
         checkout scm
         sh '''
+          set -e
           echo "== Workspace (inside Jenkins container) =="
           pwd
           ls -la
     
-          # Map Jenkins workspace path inside the named volume
-          # Jenkins WORKSPACE = /var/jenkins_home/... -> map to /jenkins_home/...
-          MOUNT_PATH="${WORKSPACE/\\/var\\/jenkins_home/\\/jenkins_home}"
+          # Convert /var/jenkins_home/... -> /jenkins_home/...
+          MOUNT_PATH="/jenkins_home${WORKSPACE#/var/jenkins_home}"
           echo "Mounting Jenkins volume path: $MOUNT_PATH"
     
-          # Run training inside a clean Python container with the jenkins_home volume
+          # Train inside a clean Python container with the jenkins_home volume
           docker run --rm \
             -v jenkins_home:/jenkins_home -w "$MOUNT_PATH" \
             python:3.11 bash -lc "
@@ -35,6 +35,7 @@ pipeline {
         '''
       }
     }
+
 
 
 
