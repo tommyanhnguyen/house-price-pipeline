@@ -9,16 +9,23 @@ pipeline {
   stages {
     stage('Build (Train + Package)') {
       steps {
+        checkout scm
         sh '''
-          python -V
-          pip install -r requirements.txt
-          # Train on committed data.csv -> create ./artifacts/*
-          python preprocess_and_train.py
-          # Build docker image including artifacts
+          # Train & tạo artifacts trong container Python sạch
+          docker run --rm \
+            -v "$PWD":/workspace -w /workspace \
+            python:3.11 bash -lc "
+              python -V &&
+              pip install -r requirements.txt &&
+              python preprocess_and_train.py
+            "
+    
+          # Sau khi artifacts/ đã sinh trong workspace -> build image app
           docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
         '''
       }
     }
+
 
     stage('Test') {
       steps {
