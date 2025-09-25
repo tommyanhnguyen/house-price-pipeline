@@ -1,0 +1,7 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+# Enable linting rules
+select = ["E", "F", "I", "B"]  # pycodestyle, pyflakes, isort, bugbear
+ignore = []
