@@ -18,30 +18,32 @@ The project uses **Python, Scikit-learn, Docker, and Streamlit**.
 The project is organized as follows:
 
 ```bash
+## Repository Structure
+
+The project is organized as follows:
+
 house-price-pipeline/
 │
-├── artifacts/                 # Saved ML artifacts (model, scaler, feature maps…)
-│   ├── rf_model.joblib
-│   ├── scaler.joblib
-│   ├── feature_columns.json
-│   └── suburb_te.json
-│
-├── scripts/                   # Helper scripts (security parsers, etc.)
-│   ├── parse_pipaudit.py
-│   └── parse_trivy.py
-│
 ├── tests/                     # Unit tests for preprocessing / model validation
-│   └── test_preprocess.py
+│   ├── test_preprocess.py
+│   └── test_sample.py
 │
 ├── app.py                     # Streamlit app for prediction
 ├── preprocess_and_train.py    # Preprocessing + training pipeline
+├── data.csv                   # Training dataset (cleaned version)
+│
 ├── requirements.txt           # Python dependencies
+├── pyproject.toml             # Ruff linting config
 ├── Dockerfile                 # Build ML app image
 ├── docker-compose.staging.yml # Docker Compose for staging deploy
 ├── docker-compose.prod.yml    # Docker Compose for production deploy
 ├── Jenkinsfile                # Full CI/CD pipeline definition
-├── README.md                  # Project overview + usage guide
-└── data.csv                   # Training dataset (cleaned version)
+├── .gitignore                 # Ignore rules
+└── README.md                  # Project overview + usage guide
+
+> Note: During pipeline execution, additional directories such as `artifacts/` (for trained models) 
+> and `scripts/` (for security parsers) are generated automatically.
+
 ```
 ---
 
