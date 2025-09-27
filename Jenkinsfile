@@ -214,21 +214,39 @@ PY
 
 
 
-    stage('Release Prod') {
+    stage('Release Production') {
       steps {
         sh '''
           set -e
-          docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:prod
           docker compose -p house-price-prod -f docker-compose.prod.yml down || true
-          docker compose -p house-price-prod -f docker-compose.prod.yml up -d
-          # Show the service is up and which port is exposed
+    
+          docker compose -p house-price-prod -f docker-compose.prod.yml up -d --build
+    
           docker compose -p house-price-prod -f docker-compose.prod.yml ps
-          # Final gate: HTTP probe to production port (adjust path if you have /health)
-          curl -sS -o /dev/null -w "PROD_HTTP=%{http_code}\n" http://localhost:8501/
-
+          docker compose -p house-price-prod -f docker-compose.prod.yml images || true
+    
+          docker compose -p house-price-prod -f docker-compose.prod.yml exec -T app python - <<'PY'
+import sys, time, urllib.request
+url = "http://localhost:8501/"
+deadline = time.time() + 90
+code = 0
+while time.time() < deadline:
+    try:
+        with urllib.request.urlopen(url, timeout=2) as r:
+            code = r.getcode()
+            if code == 200:
+                print("PROD_HTTP=200")
+                sys.exit(0)
+    except Exception:
+        pass
+    time.sleep(1)
+print(f"PROD_HTTP={code or 0}")
+sys.exit(1)
+PY
         '''
       }
     }
+
 
     stage('Monitoring') {
       steps {
