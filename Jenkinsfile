@@ -186,10 +186,8 @@ PY
           docker compose -p house-price-staging -f docker-compose.staging.yml down || true
           docker compose -p house-price-staging -f docker-compose.staging.yml up -d --build
     
-          # Log gọn để chụp hình
           docker compose -p house-price-staging -f docker-compose.staging.yml ps
     
-          # Probe bên trong container, KHÔNG cần curl
           docker compose -p house-price-staging -f docker-compose.staging.yml exec -T app python - <<'PY'
 import sys, time, urllib.request
 url = "http://localhost:8501/"
@@ -214,38 +212,99 @@ PY
 
 
 
+    // Capture the image currently running in PROD (for rollback)
+    stage('Capture Current Prod Image') {
+      steps {
+        sh '''
+          set -e
+          # Get container ID of the "app" service if it exists
+          CID=$(docker compose -p house-price-prod -f docker-compose.prod.yml ps -q app || true)
+    
+          # Store the exact image reference (repo:tag). Empty if not running yet.
+          if [ -n "$CID" ]; then
+            docker inspect -f '{{.Config.Image}}' "$CID" > prev_prod_image.txt || true
+          else
+            : > prev_prod_image.txt
+          fi
+    
+          echo "PREV_IMAGE=$(cat prev_prod_image.txt || echo '')"
+        '''
+      }
+    }
+
+    // Release to Production (with readiness gate and auto-rollback) 
     stage('Release Production') {
       steps {
         sh '''
           set -e
+    
+          # Ensure we have image name/tag values (fallbacks if env not set)
+          IMAGE_NAME="${IMAGE_NAME:-house-price}"
+          IMAGE_TAG="${IMAGE_TAG:-latest}"
+    
+          echo "Deploying ${IMAGE_NAME}:${IMAGE_TAG} to PROD…"
+    
+          # Stop current stack (ignore errors) and start fresh
           docker compose -p house-price-prod -f docker-compose.prod.yml down || true
+          IMAGE_NAME="$IMAGE_NAME" IMAGE_TAG="$IMAGE_TAG" \
+            docker compose -p house-price-prod -f docker-compose.prod.yml up -d --build
     
-          docker compose -p house-price-prod -f docker-compose.prod.yml up -d --build
-    
+          # Short, screenshot-friendly status lines
           docker compose -p house-price-prod -f docker-compose.prod.yml ps
           docker compose -p house-price-prod -f docker-compose.prod.yml images || true
     
+          # Readiness probe INSIDE the container using Python stdlib (no curl dependency)
+          set +e
           docker compose -p house-price-prod -f docker-compose.prod.yml exec -T app python - <<'PY'
 import sys, time, urllib.request
-url = "http://localhost:8501/"
+URL = "http://localhost:8501/"
 deadline = time.time() + 90
-code = 0
 while time.time() < deadline:
     try:
-        with urllib.request.urlopen(url, timeout=2) as r:
-            code = r.getcode()
-            if code == 200:
-                print("PROD_HTTP=200")
-                sys.exit(0)
+        if urllib.request.urlopen(URL, timeout=2).getcode() == 200:
+            print("PROD_HTTP=200")
+            sys.exit(0)
     except Exception:
         pass
     time.sleep(1)
-print(f"PROD_HTTP={code or 0}")
+print("PROD_HTTP=000")
 sys.exit(1)
 PY
+          RC=$?
+          set -e
+    
+          if [ "$RC" -ne 0 ]; then
+            echo "Production readiness probe failed. Attempting rollback…"
+    
+            PREV_IMAGE=$(cat prev_prod_image.txt 2>/dev/null || echo "")
+            if [ -n "$PREV_IMAGE" ]; then
+              # Split "repo:tag" -> repo & tag (simple, tag-based images)
+              PREV_NAME="${PREV_IMAGE%%:*}"
+              PREV_TAG="${PREV_IMAGE#*:}"
+    
+              if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$PREV_IMAGE" ]; then
+                echo "Rolling back to ${PREV_NAME}:${PREV_TAG}…"
+                IMAGE_NAME="$PREV_NAME" IMAGE_TAG="$PREV_TAG" \
+                  docker compose -p house-price-prod -f docker-compose.prod.yml up -d --build
+    
+                docker compose -p house-price-prod -f docker-compose.prod.yml ps
+                echo "Rolled back to ${PREV_NAME}:${PREV_TAG}"
+              else
+                echo "Could not parse previous tag from '${PREV_IMAGE}'. No rollback performed."
+              fi
+            else
+              echo "No previous image recorded. Cannot rollback."
+            fi
+    
+            # Fail the stage so the pipeline surfaces the issue
+            exit 1
+          fi
+    
+          echo "Production release succeeded."
         '''
       }
     }
+
 
 
     stage('Monitoring') {
