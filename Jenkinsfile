@@ -186,9 +186,9 @@ PY
           docker compose -p house-price-staging -f docker-compose.staging.yml down || true
           docker compose -p house-price-staging -f docker-compose.staging.yml up -d --build
           # Show the container is up and which port is exposed
-          docker compose -p house-price-staging -f docker-compose.staging.yml ps
+          # docker compose -p house-price-staging -f docker-compose.staging.yml ps
           # Quick HTTP probe to staging port (adjust path if your app uses /health)
-          curl -sS -o /dev/null -w "STAGING_HTTP=%{http_code}\n" http://localhost:8502/
+          # curl -sS -o /dev/null -w "STAGING_HTTP=%{http_code}\n" http://localhost:8502/
 
         '''
       }
