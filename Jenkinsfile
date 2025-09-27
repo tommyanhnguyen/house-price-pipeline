@@ -71,8 +71,10 @@ pipeline {
               pip install ruff &&
               ruff --version &&
               # Allow up to 20 findings before failing (tune as needed)
-              ruff check . --output-format=concise | tee ruff.txt || true &&
-              COUNT=$(wc -l < ruff.txt); echo "Ruff issues: $COUNT"; [ "$COUNT" -le 20 ]
+              ruff check . --output-format=concise --exit-zero | tee ruff.txt
+              COUNT=$(grep -E ':[0-9]+:[0-9]+: [A-Z][0-9]{3} ' -c ruff.txt)
+              echo "Ruff issues: $COUNT"
+              [ "$COUNT" -le 20 ]
             '
         '''
       }
