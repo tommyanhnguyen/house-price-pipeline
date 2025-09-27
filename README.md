@@ -13,6 +13,11 @@ The project uses **Python, Scikit-learn, Docker, and Streamlit**.
 
 ---
 
+## Repository Structure
+
+The project is organized as follows:
+
+```bash
 house-price-pipeline/
 │
 ├── artifacts/                 # Saved ML artifacts (model, scaler, feature maps…)
@@ -37,5 +42,19 @@ house-price-pipeline/
 ├── Jenkinsfile                # Full CI/CD pipeline definition
 ├── README.md                  # Project overview + usage guide
 └── data.csv                   # Training dataset (cleaned version)
+```
+---
 
---- 
+## 🛠️ Quick Start
+
+```bash
+# 1. Clone repo
+git clone https://github.com/tommyanhnguyen/house-price-pipeline.git
+cd house-price-pipeline
+
+# 2. Build Docker image
+docker build -t house-price .
+
+# 3. Run Streamlit app
+docker run -p 8501:8501 house-price
+```
