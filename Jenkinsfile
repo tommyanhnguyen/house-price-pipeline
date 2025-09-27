@@ -185,6 +185,11 @@ PY
           set -e
           docker compose -p house-price-staging -f docker-compose.staging.yml down || true
           docker compose -p house-price-staging -f docker-compose.staging.yml up -d --build
+          # Show the container is up and which port is exposed
+          docker compose -p house-price-staging -f docker-compose.staging.yml ps
+          # Quick HTTP probe to staging port (adjust path if your app uses /health)
+          curl -sS -o /dev/null -w "STAGING_HTTP=%{http_code}\n" http://localhost:8502/
+
         '''
       }
     }
@@ -196,6 +201,11 @@ PY
           docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:prod
           docker compose -p house-price-prod -f docker-compose.prod.yml down || true
           docker compose -p house-price-prod -f docker-compose.prod.yml up -d
+          # Show the service is up and which port is exposed
+          docker compose -p house-price-prod -f docker-compose.prod.yml ps
+          # Final gate: HTTP probe to production port (adjust path if you have /health)
+          curl -sS -o /dev/null -w "PROD_HTTP=%{http_code}\n" http://localhost:8501/
+
         '''
       }
     }
