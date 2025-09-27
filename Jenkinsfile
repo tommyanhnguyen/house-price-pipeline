@@ -10,8 +10,9 @@ pipeline {
   environment {
     IMAGE_NAME   = "house-price"
     IMAGE_TAG    = "${env.BUILD_NUMBER}"
-    STAGING_PORT = "8502"   // tránh đụng 8501
+    STAGING_PORT = "8502"   
     PROD_PORT    = "8501"
+    ALERT_TO = 'anhnguyen171105@gmail.com' 
     // Docker Hub credentials id: dockerhub
   }
 
@@ -309,24 +310,89 @@ PY
 
     stage('Monitoring') {
       steps {
-        sh '''
+        script {
+          sh '''
+            set -e
+    
+            # -------- STAGING --------
+            CID=$(docker compose -p house-price-staging -f docker-compose.staging.yml ps -q app || true)
+            if [ -n "$CID" ]; then
+              for i in $(seq 1 10); do
+                s=$(docker inspect -f '{{.State.Health.Status}}' "$CID" 2>/dev/null || echo none)
+                echo "STAGING health=$s"
+                [ "$s" = "healthy" ] && break
+                sleep 3
+              done
+              # Probe from inside the container (no curl needed)
+              set +e
+              docker compose -p house-price-staging -f docker-compose.staging.yml exec -T app python - <<'PY' > staging_probe.txt
+import urllib.request
+try:
+    code = urllib.request.urlopen("http://localhost:8501/", timeout=2).getcode()
+    print(f"STAGING_HTTP={code}")
+except Exception:
+    print("STAGING_HTTP=000")
+PY
+              set -e
+            else
+              echo "STAGING_HTTP=000" > staging_probe.txt
+            fi
+    
+            # -------- PRODUCTION --------
+            PID=$(docker compose -p house-price-prod -f docker-compose.prod.yml ps -q app || true)
+            if [ -n "$PID" ]; then
+              for i in $(seq 1 20); do
+                s=$(docker inspect -f '{{.State.Health.Status}}' "$PID" 2>/dev/null || echo none)
+                echo "PROD health=$s"
+                [ "$s" = "healthy" ] && break
+                sleep 3
+              done
+              set +e
+              docker compose -p house-price-prod -f docker-compose.prod.yml exec -T app python - <<'PY' > prod_probe.txt
+import urllib.request
+try:
+    code = urllib.request.urlopen("http://localhost:8501/", timeout=2).getcode()
+    print(f"PROD_HTTP={code}")
+except Exception:
+    print("PROD_HTTP=000")
+PY
           set -e
-          echo "Healthcheck STAGING (:${STAGING_PORT})"
-          CID=$(docker compose -p house-price-staging -f docker-compose.staging.yml ps -q app || true)
-          if [ -n "$CID" ]; then
-            for i in {1..10}; do
-              STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$CID" 2>/dev/null || echo "unknown")
-              echo "Health=$STATUS"
-              [ "$STATUS" = "healthy" ] && break
-              sleep 3
-            done
-          fi
-          # Non-blocking curl (won't fail the pipeline)
-          curl -sSf http://localhost:${STAGING_PORT}/ >/dev/null || echo "Staging UI curl failed (non-blocking)"
-        '''
+            else
+              echo "PROD_HTTP=000" > prod_probe.txt
+            fi
+          '''
+    
+          // Read results and act
+          def stagingProbe = readFile('staging_probe.txt').trim()
+          def prodProbe    = readFile('prod_probe.txt').trim()
+          echo "Monitoring summary → ${stagingProbe}, ${prodProbe}"
+    
+          // 2) Email warning if staging is not OK (non-blocking)
+          if (!stagingProbe.contains('=200')) {
+            emailext(
+              to: env.ALERT_TO,
+              subject: "⚠ Staging liveness failed – ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+              mimeType: 'text/plain',
+              body: """Staging probe returned: ${stagingProbe}
+    Build URL: ${env.BUILD_URL}"""
+            )
+          }
+    
+          // 3) Email + fail if production is not OK (blocking)
+          if (!prodProbe.contains('=200')) {
+            emailext(
+              to: env.ALERT_TO,
+              subject: "🚨 Production liveness FAILED – ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+              mimeType: 'text/plain',
+              body: """Production probe returned: ${prodProbe}
+    Build URL: ${env.BUILD_URL}"""
+            )
+            error("Production liveness probe failed: ${prodProbe}")
+          }
+        }
       }
     }
-  }
+
 
   post {
     success {
