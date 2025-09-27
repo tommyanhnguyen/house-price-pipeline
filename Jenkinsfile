@@ -146,15 +146,18 @@ PY
 
           # 2) Image vulnerabilities (Trivy) — run with host Docker socket
           docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$PWD":/work \
-            aquasec/trivy:0.52.2 \
-            image --scanners vuln --format json --severity HIGH,CRITICAL \
-            --output /work/trivy.json ${IMAGE_NAME}:${IMAGE_TAG} || true
+            docker run --rm \
+              -v jenkins_home:/jenkins_home \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy:0.52.2 image \
+              --scanners vuln --format json --severity HIGH,CRITICAL \
+              --output "$MOUNT_PATH/trivy.json" house-price:21 || true
+
 
           # Parse Trivy results inside Python container (same workspace path)
           docker run --rm \
-            -v jenkins_home:/jenkins_home -w "$MOUNT_PATH" \
+            -v jenkins_home:/jenkins_home \
+            -w "$MOUNT_PATH" \
             python:3.11 python scripts/parse_trivy.py
         '''
       }
