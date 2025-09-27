@@ -183,43 +183,35 @@ PY
       steps {
         sh '''
           set -e
-    
-          # Stop any previous staging stack (ignore errors)
           docker compose -p house-price-staging -f docker-compose.staging.yml down || true
-    
-          # Start fresh
           docker compose -p house-price-staging -f docker-compose.staging.yml up -d --build
     
-          # Resolve container ID of the "app" service in this compose project
-          CID=$(docker compose -p house-price-staging -f docker-compose.staging.yml ps -q app)
-    
-          # Wait (up to 90s) for HEALTHCHECK to report "healthy"
-          for i in $(seq 1 90); do
-            status=$(docker inspect -f '{{.State.Health.Status}}' "$CID" 2>/dev/null || echo "none")
-            echo "health=$status"
-            [ "$status" = "healthy" ] && break
-            sleep 1
-          done
-    
-          # Show a concise status line for evidence 
+          # Log gọn để chụp hình
           docker compose -p house-price-staging -f docker-compose.staging.yml ps
     
-          # Final gate: probe HTTP from *inside* the container on internal port 8501
-          docker compose -p house-price-staging -f docker-compose.staging.yml exec -T app sh -lc '
-            for i in $(seq 1 60); do
-              code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8501/ || true)
-              if [ "$code" = "200" ]; then
-                echo "STAGING_HTTP=200"
-                exit 0
-              fi
-              sleep 1
-            done
-            echo "STAGING_HTTP=${code:-000}"
-            exit 1
-          '
+          # Probe bên trong container, KHÔNG cần curl
+          docker compose -p house-price-staging -f docker-compose.staging.yml exec -T app python - <<'PY'
+import sys, time, urllib.request
+url = "http://localhost:8501/"
+deadline = time.time() + 90
+code = 0
+while time.time() < deadline:
+    try:
+        with urllib.request.urlopen(url, timeout=2) as r:
+            code = r.getcode()
+            if code == 200:
+                print("STAGING_HTTP=200")
+                sys.exit(0)
+    except Exception:
+        pass
+    time.sleep(1)
+print(f"STAGING_HTTP={code or 0}")
+sys.exit(1)
+PY
         '''
       }
     }
+
 
 
     stage('Release Prod') {
