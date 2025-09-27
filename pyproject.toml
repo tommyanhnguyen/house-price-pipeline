@@ -1,9 +1,8 @@
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+extend-exclude = ["scripts/*"] 
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
 ignore = ["E501", "I001", "E401", "E701", "E702"]
-
-extend-exclude = ["scripts/*"]
