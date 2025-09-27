@@ -12,6 +12,7 @@ pipeline {
     IMAGE_TAG    = "${env.BUILD_NUMBER}"
     STAGING_PORT = "8502"   
     PROD_PORT    = "8501"
+    ALERT_TO = 'anhnguyen171105@gmail.com' 
     // Docker Hub credentials id: dockerhub
   }
 
@@ -312,16 +313,17 @@ PY
         sh '''
           set -e
     
-          echo "Healthcheck STAGING (:8502)"
+          # ---------- STAGING ----------
           CID=$(docker compose -p house-price-staging -f docker-compose.staging.yml ps -q app || true)
           if [ -n "$CID" ]; then
             for i in $(seq 1 10); do
-              s=$(docker inspect -f '{{.State.Health.Status}}' "$CID" 2>/dev/null || echo "none")
+              s=$(docker inspect -f '{{.State.Health.Status}}' "$CID" 2>/dev/null || echo none)
               echo "STAGING health=$s"
+              [ "$s" = "healthy" ] && break
               sleep 3
             done
             set +e
-            docker compose -p house-price-staging -f docker-compose.staging.yml exec -T app python - <<'PY'
+            docker compose -p house-price-staging -f docker-compose.staging.yml exec -T app python - <<'PY' > staging_probe.txt
 import urllib.request
 try:
     code = urllib.request.urlopen("http://localhost:8501/", timeout=2).getcode()
@@ -330,18 +332,21 @@ except Exception:
     print("STAGING_HTTP=000")
 PY
             set -e
+          else
+            echo "STAGING_HTTP=000" > staging_probe.txt
           fi
     
-          echo "Healthcheck PROD (:8501)"
+          # ---------- PROD ----------
           PID=$(docker compose -p house-price-prod -f docker-compose.prod.yml ps -q app || true)
           if [ -n "$PID" ]; then
-            for i in $(seq 1 10); do
-              s=$(docker inspect -f '{{.State.Health.Status}}' "$PID" 2>/dev/null || echo "none")
+            for i in $(seq 1 20); do
+              s=$(docker inspect -f '{{.State.Health.Status}}' "$PID" 2>/dev/null || echo none)
               echo "PROD health=$s"
+              [ "$s" = "healthy" ] && break
               sleep 3
             done
             set +e
-            docker compose -p house-price-prod -f docker-compose.prod.yml exec -T app python - <<'PY'
+            docker compose -p house-price-prod -f docker-compose.prod.yml exec -T app python - <<'PY' > prod_probe.txt
 import urllib.request
 try:
     code = urllib.request.urlopen("http://localhost:8501/", timeout=2).getcode()
@@ -350,10 +355,41 @@ except Exception:
     print("PROD_HTTP=000")
 PY
             set -e
+          else
+            echo "PROD_HTTP=000" > prod_probe.txt
           fi
         '''
+    
+        script {
+          def stagingProbe = readFile('staging_probe.txt').trim()
+          def prodProbe    = readFile('prod_probe.txt').trim()
+    
+          echo "Monitoring summary → ${stagingProbe}, ${prodProbe}"
+    
+          if (!stagingProbe.contains('=200')) {
+            emailext(
+              to: env.ALERT_TO,
+              subject: "⚠ Staging liveness failed – ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+              mimeType: 'text/plain',
+              body: """Staging probe returned: ${stagingProbe}
+    Build: ${env.BUILD_URL}"""
+            )
+          }
+    
+          if (!prodProbe.contains('=200')) {
+            emailext(
+              to: env.ALERT_TO,
+              subject: "Production liveness FAILED – ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+              mimeType: 'text/plain',
+              body: """Production probe returned: ${prodProbe}
+    Build: ${env.BUILD_URL}"""
+            )
+            error("Production liveness probe failed: ${prodProbe}")
+          }
+        }
       }
     }
+
   }
 
 
