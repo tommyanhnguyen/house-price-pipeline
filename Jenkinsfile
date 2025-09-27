@@ -183,16 +183,44 @@ PY
       steps {
         sh '''
           set -e
+    
+          # Stop any previous staging stack (ignore errors)
           docker compose -p house-price-staging -f docker-compose.staging.yml down || true
+    
+          # Start fresh
           docker compose -p house-price-staging -f docker-compose.staging.yml up -d --build
-          # Show the container is up and which port is exposed
-          # docker compose -p house-price-staging -f docker-compose.staging.yml ps
-          # Quick HTTP probe to staging port (adjust path if your app uses /health)
-          # curl -sS -o /dev/null -w "STAGING_HTTP=%{http_code}\n" http://localhost:8502/
-
+    
+          # Resolve container ID of the "app" service in this compose project
+          CID=$(docker compose -p house-price-staging -f docker-compose.staging.yml ps -q app)
+    
+          # Wait (up to 90s) for HEALTHCHECK to report "healthy"
+          for i in $(seq 1 90); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' "$CID" 2>/dev/null || echo "none")
+            echo "health=$status"
+            [ "$status" = "healthy" ] && break
+            sleep 1
+          done
+    
+          # Show a concise status line for evidence 
+          docker compose -p house-price-staging -f docker-compose.staging.yml ps
+    
+          # Final gate: probe HTTP from *inside* the container on internal port 8501
+          docker compose -p house-price-staging -f docker-compose.staging.yml exec -T app sh -lc '
+            for i in $(seq 1 60); do
+              code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8501/ || true)
+              if [ "$code" = "200" ]; then
+                echo "STAGING_HTTP=200"
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "STAGING_HTTP=${code:-000}"
+            exit 1
+          '
         '''
       }
     }
+
 
     stage('Release Prod') {
       steps {
